@@ -1,0 +1,103 @@
+version: 2.1
+defaults: &defaults
+  docker:
+    - image: cypress/base:12.14.0
+commands:
+  install-deps:
+    description: "Job preparation"
+    steps:
+      - checkout
+      # find compatible cache from previous build,
+      # it should have same dependencies installed from package.json checksum
+      - restore_cache:
+          keys:
+            - cache-{{ arch }}-{{ checksum "package-lock.json" }}
+      - run:
+          name: Install Dependencies
+          command: npm ci
+      # save new cache folder if needed
+      - save_cache:
+          key: cache-{{ arch }}-{{ checksum "package-lock.json" }}
+          paths:
+            - ~/.npm
+            - ~/.cache
+jobs:
+  audit:
+    <<: *defaults
+    docker:
+      - image: cypress/base:12.14.0
+        environment:
+          TERM: xterm
+    steps:
+      - install-deps
+      - run:
+          name: Audit for vulnerabilities
+          # build the project into the dist directory
+          command: npm run ci:audit
+  check-size:
+    <<: *defaults
+    docker:
+      - image: cypress/base:12.14.0
+        environment:
+          TERM: xterm
+    steps:
+      - install-deps
+      - run:
+          name: Build production bundle zip
+          # build the project into the dist directory
+          command: npm run build:zip
+      - run:
+          name: Check production bundle size
+          # build the project into the dist directory
+          command: npm run ci:size
+  build:
+    <<: *defaults
+    docker:
+      - image: cypress/base:12.14.0
+        environment:
+          TERM: xterm
+    steps:
+      - install-deps
+      - run:
+          name: Build project
+          # build the project into the dist directory
+          command: npm run ci:e2e:build
+      # store the build artifacts
+      - persist_to_workspace:
+          root: ./
+          paths:
+            - build
+  e2e_tests:
+    <<: *defaults
+    docker:
+      - image: cypress/browsers:node12.4.0-chrome76
+        environment:
+          TERM: xterm
+    steps:
+      - install-deps
+      - attach_workspace:
+          at: ./
+      - run:
+          name: Run local server & Cypress test
+          command: npm run ci:e2e:test
+      - store_artifacts:
+          path: cypress/screenshots
+
+workflows:
+  version: 2.1
+  build:
+    jobs:
+      - audit:
+          name: Check vulnerabilities
+      - check-size:
+          name: Check production bundle size
+          requires:
+            - Check vulnerabilities
+      - build:
+          name: Build production app
+          requires:
+            - Check vulnerabilities
+      - e2e_tests:
+          name: E2E Tests
+          requires:
+            - Build production app

@@ -1,0 +1,6 @@
+/* This file also includes a reset styles */
+@import '~@datorama/app-components/index.css';
+
+* {
+    box-sizing: border-box;
+}
